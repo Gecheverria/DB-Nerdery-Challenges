@@ -79,28 +79,50 @@ Now it's your turn to write SQL queries to achieve the following results (You ne
 1. Total money of all the accounts group by types.
 
 ```
-Your query here
+SELECT type, SUM(mount) 
+FROM accounts 
+GROUP BY type 
+HAVING type = 'SAVING_ACCOUNT' OR type = 'CURRENT_ACCOUNT';
 ```
 
 
 2. How many users with at least 2 `CURRENT_ACCOUNT`.
 
 ```
-Your query here
+WITH AccountTotal AS (
+    SELECT u.id, COUNT(account_id)
+    FROM accounts AS a
+    JOIN users AS u ON a.user_id = u.id AND a.type = 'CURRENT_ACCOUNT'
+    GROUP BY u.id
+)
+SELECT COUNT(id) AS total_accounts_multiple_current
+FROM AccountTotal
+WHERE COUNT > 1;
 ```
 
 
 3. List the top five accounts with more money.
 
 ```
-Your query here
+SELECT concat(u.name, ' ', u.last_name) AS user, a.account_id, a.mount
+FROM accounts AS a
+JOIN users AS u ON a.user_id = u.id 
+ORDER BY mount DESC
+LIMIT 5
 ```
 
 
 4. Get the three users with the most money after making movements.
 
 ```
-Your query here
+SELECT u.name AS user, SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS net_amount
+FROM users AS u
+JOIN accounts AS a ON u.id = a.user_id
+JOIN movements AS m ON m.account_from = a.id
+GROUP BY u.name
+ORDER BY net_amount DESC
+LIMIT 3
+;
 ```
 
 
@@ -120,42 +142,152 @@ Your query here
     
     d. Put your answer here if the transaction fails(YES/NO):
     ```
-        Your answer
+        Yes, because the amount exceeds the avialable funds the user has.
     ```
 
     e. If the transaction fails, make the correction on step _c_ to avoid the failure:
     ```
-        Your query
+        DECLARE
+            amount_to_withdraw NUMERIC := 731823.56
+            user_balance NUMERIC;
+
+        SELECT mount 
+        INTO user_balance 
+        FROM accounts 
+        WHERE id = '3b79e403-c788-495a-a8ca-86ad7643afaf'
+
+        IF user_balance > amount_to_withdraw THEN
+            INSERT INTO movements (id, type, account_from, account_to, mount, created_at, updated_at)
+            VALUES (
+                uuid_generate_v4(),
+                'OUT',
+                '3b79e403-c788-495a-a8ca-86ad7643afaf',
+                NULL,
+                amount_to_withdraw,
+                NOW(),
+                NOW()
+            );
+        ELSE
+            ROLLBACK;
+        END IF;
     ```
 
     f. Once the transaction is correct, make a commit
     ```
-        Your query
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    UPDATE accounts
+    SET mount = (
+        SELECT SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS balance
+        FROM accounts AS a
+        JOIN movements AS m ON a.id = m.account_from
+        WHERE a.id = '3b79e403-c788-495a-a8ca-86ad7643afaf'
+    )
+    WHERE id = '3b79e403-c788-495a-a8ca-86ad7643afaf';
+
+    UPDATE accounts
+    SET mount = (
+        SELECT SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS balance
+        FROM accounts AS a
+        JOIN movements AS m ON a.id = m.account_from
+        WHERE a.id = 'fd244313-36e5-4a17-a27c-f8265bc46590'
+    )
+    WHERE id = 'fd244313-36e5-4a17-a27c-f8265bc46590';
+
+    INSERT INTO movements (id, type, account_from, account_to, mount, created_at, updated_at)
+    VALUES (
+        uuid_generate_v4(),
+        'TRANSFER',
+        '3b79e403-c788-495a-a8ca-86ad7643afaf',
+        'fd244313-36e5-4a17-a27c-f8265bc46590',
+        50.75,
+        NOW(),
+        NOW()
+    );
+
+    UPDATE accounts
+    SET mount = (
+        SELECT SUM(a.mount - 50.75) AS balance
+        FROM accounts AS a
+        JOIN movements AS m ON a.id = m.account_from
+        WHERE a.id = '3b79e403-c788-495a-a8ca-86ad7643afaf'
+    )
+    WHERE id = '3b79e403-c788-495a-a8ca-86ad7643afaf';
+
+    DO $$
+        DECLARE
+            user_balance DOUBLE PRECISION;
+
+        BEGIN
+        
+        SELECT mount 
+        INTO user_balance 
+        FROM accounts 
+        WHERE id = '3b79e403-c788-495a-a8ca-86ad7643afaf';
+        
+        IF user_balance > 731823.56 THEN
+            INSERT INTO movements (id, type, account_from, account_to, mount, created_at, updated_at)
+            VALUES (
+                uuid_generate_v4(),
+                'OUT',
+                '3b79e403-c788-495a-a8ca-86ad7643afaf',
+                NULL,
+                731823.56,
+                NOW(),
+                NOW()
+            );
+        ELSE
+            ROLLBACK;
+        END IF;
+    END $$;
+
+    COMMIT;
     ```
 
     e. How much money the account `fd244313-36e5-4a17-a27c-f8265bc46590` have:
     ```
-        Your query
+    SELECT concat(u.name, ' ', u.last_name) AS user, SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS net_amount
+    FROM users AS u
+    JOIN accounts AS a ON u.id = a.user_id
+    JOIN movements AS m ON m.account_from = a.id
+    WHERE a.id = 'fd244313-36e5-4a17-a27c-f8265bc46590'
+    GROUP BY u.name, u.last_name, u.email
+    ORDER BY net_amount DESC;
     ```
 
 
 6. All the movements and the user information with the account `3b79e403-c788-495a-a8ca-86ad7643afaf`
 
 ```
-Your query here
+SELECT concat(u.name, ' ', u.last_name) AS user, u.email, a.account_id, a.mount, m.account_to, m.account_from, m.mount, m.type
+FROM users AS u
+JOIN accounts AS a ON u.id = a.user_id
+JOIN movements AS m ON a.id = m.account_to OR a.id = m.account_from
+WHERE a.id = '3b79e403-c788-495a-a8ca-86ad7643afaf';
 ```
 
 
 7. The name and email of the user with the highest money in all his/her accounts
 
 ```
-Your query here
+SELECT concat(u.name, ' ', u.last_name) AS user, u.email, SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS net_amount
+FROM users AS u
+JOIN accounts AS a ON u.id = a.user_id
+JOIN movements AS m ON m.account_from = a.id
+GROUP BY u.name, u.last_name, u.email
+ORDER BY net_amount DESC
+LIMIT 1;
 ```
 
 
 8. Show all the movements for the user `Kaden.Gusikowski@gmail.com` order by account type and created_at on the movements table
 
 ```
-Your query here
+SELECT u.email, m.type, a.account_id, m.account_from, m.account_to, m.created_at
+FROM movements AS m
+JOIN accounts AS a ON m.account_from = a.id OR m.account_to = a.id
+JOIN users AS u ON a.user_id = u.id
+WHERE u.email = 'Kaden.Gusikowski@gmail.com'
+ORDER BY a.type, m.created_at DESC;
 ```
 
