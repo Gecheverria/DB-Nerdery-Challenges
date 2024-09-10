@@ -115,12 +115,21 @@ LIMIT 5
 4. Get the three users with the most money after making movements.
 
 ```
-SELECT u.name AS user, SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS net_amount
+SELECT u.name,
+       SUM(Case
+               WHEN m.type = 'IN' THEN m.mount
+               WHEN m.type = 'OUT' THEN -m.mount
+               WHEN m.type = 'OTHER' THEN -m.mount
+               else
+                   COALESCE(CASE WHEN m.account_to = a.id THEN m.mount ELSE 0 END, 0) -
+                   COALESCE(CASE WHEN m.account_from = a.id THEN m.mount ELSE 0 END, 0)
+           END
+       ) AS total_balance
 FROM users AS u
 JOIN accounts AS a ON u.id = a.user_id
-JOIN movements AS m ON m.account_from = a.id
-GROUP BY u.name
-ORDER BY net_amount DESC
+JOIN movements AS m ON a.id = m.account_from OR a.id = m.account_to
+GROUP BY u.id
+ORDER BY total_balance DESC
 LIMIT 3
 ;
 ```
@@ -129,6 +138,7 @@ LIMIT 3
 5. In this part you need to create a transaction with the following steps:
 
     a. First, get the ammount for the account `3b79e403-c788-495a-a8ca-86ad7643afaf` and `fd244313-36e5-4a17-a27c-f8265bc46590` after all their movements.
+    
     b. Add a new movement with the information:
         from: `3b79e403-c788-495a-a8ca-86ad7643afaf` make a transfer to `fd244313-36e5-4a17-a27c-f8265bc46590`
         mount: 50.75
@@ -147,38 +157,53 @@ LIMIT 3
 
     e. If the transaction fails, make the correction on step _c_ to avoid the failure:
     ```
-        DECLARE
-            amount_to_withdraw NUMERIC := 731823.56
-            user_balance NUMERIC;
+        DO $$
+            DECLARE
+                user_balance DOUBLE PRECISION;
 
-        SELECT mount 
-        INTO user_balance 
-        FROM accounts 
-        WHERE id = '3b79e403-c788-495a-a8ca-86ad7643afaf'
+            BEGIN
+            
+            SELECT mount 
+            INTO user_balance 
+            FROM accounts 
+            WHERE id = '3b79e403-c788-495a-a8ca-86ad7643afaf';
+            
+            IF user_balance > 731823.56 THEN
+                INSERT INTO movements (id, type, account_from, account_to, mount, created_at, updated_at)
+                VALUES (
+                    uuid_generate_v4(),
+                    'OUT',
+                    '3b79e403-c788-495a-a8ca-86ad7643afaf',
+                    NULL,
+                    731823.56,
+                    NOW(),
+                    NOW()
+                );
+            ELSE
+                RAISE EXCEPTION 'Insufficient funds for user';
+            END IF;
 
-        IF user_balance > amount_to_withdraw THEN
-            INSERT INTO movements (id, type, account_from, account_to, mount, created_at, updated_at)
-            VALUES (
-                uuid_generate_v4(),
-                'OUT',
-                '3b79e403-c788-495a-a8ca-86ad7643afaf',
-                NULL,
-                amount_to_withdraw,
-                NOW(),
-                NOW()
-            );
-        ELSE
-            ROLLBACK;
-        END IF;
+        COMMIT;
+
+    EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+    END $$;
     ```
 
     f. Once the transaction is correct, make a commit
     ```
-    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
     UPDATE accounts
     SET mount = (
-        SELECT SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS balance
+        SELECT SUM(Case
+                   WHEN m.type = 'IN' THEN m.mount
+                   WHEN m.type = 'OUT' THEN -m.mount
+                   WHEN m.type = 'OTHER' THEN -m.mount
+                   else
+                       COALESCE(CASE WHEN m.account_to = a.id THEN m.mount ELSE 0 END, 0) -
+                       COALESCE(CASE WHEN m.account_from = a.id THEN m.mount ELSE 0 END, 0)
+               END
+           ) AS balance
         FROM accounts AS a
         JOIN movements AS m ON a.id = m.account_from
         WHERE a.id = '3b79e403-c788-495a-a8ca-86ad7643afaf'
@@ -187,7 +212,15 @@ LIMIT 3
 
     UPDATE accounts
     SET mount = (
-        SELECT SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS balance
+        SELECT SUM(Case
+                   WHEN m.type = 'IN' THEN m.mount
+                   WHEN m.type = 'OUT' THEN -m.mount
+                   WHEN m.type = 'OTHER' THEN -m.mount
+                   else
+                       COALESCE(CASE WHEN m.account_to = a.id THEN m.mount ELSE 0 END, 0) -
+                       COALESCE(CASE WHEN m.account_from = a.id THEN m.mount ELSE 0 END, 0)
+               END
+           ) AS balance
         FROM accounts AS a
         JOIN movements AS m ON a.id = m.account_from
         WHERE a.id = 'fd244313-36e5-4a17-a27c-f8265bc46590'
@@ -196,7 +229,7 @@ LIMIT 3
 
     INSERT INTO movements (id, type, account_from, account_to, mount, created_at, updated_at)
     VALUES (
-        uuid_generate_v4(),
+        gen_random_uuid(),
         'TRANSFER',
         '3b79e403-c788-495a-a8ca-86ad7643afaf',
         'fd244313-36e5-4a17-a27c-f8265bc46590',
@@ -237,11 +270,15 @@ LIMIT 3
                 NOW()
             );
         ELSE
-            ROLLBACK;
+            RAISE EXCEPTION 'Insufficient funds for user';
         END IF;
-    END $$;
 
     COMMIT;
+
+    EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+    END $$;
     ```
 
     e. How much money the account `fd244313-36e5-4a17-a27c-f8265bc46590` have:
@@ -290,4 +327,3 @@ JOIN users AS u ON a.user_id = u.id
 WHERE u.email = 'Kaden.Gusikowski@gmail.com'
 ORDER BY a.type, m.created_at DESC;
 ```
-
