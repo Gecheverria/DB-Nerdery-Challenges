@@ -82,7 +82,6 @@ Now it's your turn to write SQL queries to achieve the following results (You ne
 SELECT type, SUM(mount) 
 FROM accounts 
 GROUP BY type 
-HAVING type = 'SAVING_ACCOUNT' OR type = 'CURRENT_ACCOUNT';
 ```
 
 
@@ -90,12 +89,12 @@ HAVING type = 'SAVING_ACCOUNT' OR type = 'CURRENT_ACCOUNT';
 
 ```
 WITH AccountTotal AS (
-    SELECT u.id, COUNT(account_id)
+    SELECT a.user_id, COUNT(a.account_id)
     FROM accounts AS a
-    JOIN users AS u ON a.user_id = u.id AND a.type = 'CURRENT_ACCOUNT'
-    GROUP BY u.id
+    WHERE a.type = 'CURRENT_ACCOUNT'
+    GROUP BY a.user_id
 )
-SELECT COUNT(id) AS total_accounts_multiple_current
+SELECT COUNT(user_id) AS total_accounts_multiple_current
 FROM AccountTotal
 WHERE COUNT > 1;
 ```
@@ -307,7 +306,15 @@ WHERE a.id = '3b79e403-c788-495a-a8ca-86ad7643afaf';
 7. The name and email of the user with the highest money in all his/her accounts
 
 ```
-SELECT concat(u.name, ' ', u.last_name) AS user, u.email, SUM((CASE WHEN m.type = 'IN' THEN m.mount ELSE - m.mount END) + a.mount) AS net_amount
+SELECT concat(u.name, ' ', u.last_name) AS user, u.email, SUM(Case
+                   WHEN m.type = 'IN' THEN m.mount
+                   WHEN m.type = 'OUT' THEN -m.mount
+                   WHEN m.type = 'OTHER' THEN -m.mount
+                   else
+                       COALESCE(CASE WHEN m.account_to = a.id THEN m.mount ELSE 0 END, 0) -
+                       COALESCE(CASE WHEN m.account_from = a.id THEN m.mount ELSE 0 END, 0)
+               END
+           ) AS net_amount
 FROM users AS u
 JOIN accounts AS a ON u.id = a.user_id
 JOIN movements AS m ON m.account_from = a.id
