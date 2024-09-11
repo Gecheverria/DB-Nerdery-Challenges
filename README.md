@@ -104,7 +104,7 @@ SELECT c.name, o.address, COUNT(e.office_id) AS count FROM employees AS e JOIN o
 4. Three supervisors with the most amount of employees they are in charge.
 
 ```
-SELECT supervisor_id, COUNT(id) AS count FROM employees WHERE supervisor_id IS NOT NULL GROUP BY supervisor_id ORDER BY count DESC LIMIT 3;
+SELECT supervisor_id, concat(first_name, ' ', last_name), COUNT(id) AS count FROM employees WHERE supervisor_id IS NOT NULL GROUP BY supervisor_id ORDER BY count DESC LIMIT 3;
 ```
 
 <p align="center">
